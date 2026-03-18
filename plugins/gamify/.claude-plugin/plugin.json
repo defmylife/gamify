@@ -2,7 +2,9 @@
   "name": "gamify",
   "version": "0.1.0",
   "description": "Turn your engineering sessions into an RPG. The Game Master assigns quests, tracks XP and streaks, awards hidden achievements, and guides you as Tech Lead + PM + mentor — making every session a meaningful chapter in your growth story.",
-  "author": "defmylife",
+  "author": {
+    "name": "defmylife"
+  },
   "license": "MIT",
   "keywords": [
     "gamification",
