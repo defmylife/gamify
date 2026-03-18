@@ -28,7 +28,7 @@ There are 8 main quests — from *The Awakening* (your first test) to *The Sover
 
 ```bash
 # Add the marketplace
-/plugin marketplace add YOUR_GITHUB_USERNAME/gamify-claude-plugin
+/plugin marketplace add defmylife/gamify
 
 # Install the plugin
 /plugin install gamify
