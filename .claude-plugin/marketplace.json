@@ -8,13 +8,7 @@
       "name": "gamify",
       "version": "0.1.0",
       "description": "RPG framework for Claude Code. Installs the Game Master agent, quest suggestion and tracker skills, and XP hooks.",
-      "source": "./plugins/gamify",
-      "category": "productivity",
-      "keywords": ["gamification", "rpg", "quests", "xp", "achievements", "coaching"],
-      "repository": {
-        "type": "github",
-        "url": "https://github.com/defmylife/gamify"
-      }
+      "source": "./plugins/gamify"
     }
   ]
 }
