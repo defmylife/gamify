@@ -1,6 +1,6 @@
 {
   "name": "gamify",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Turn your engineering sessions into an RPG. The Game Master assigns quests, tracks XP and streaks, awards hidden achievements, and guides you as Tech Lead + PM + mentor — making every session a meaningful chapter in your growth story.",
   "author": "Sea",
   "license": "MIT",
@@ -24,8 +24,7 @@
     "skills": [
       "skills/gm-quest-suggestions",
       "skills/gm-quest-tracker"
-    ],
-    "hooks": "hooks/hooks.json"
+    ]
   },
 
   "permissions": {
