@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "player": {
+    "name": "Adventurer",
+    "class": "Engineer",
+    "guild": "",
+    "joined": "1970-01-01"
+  },
+  "level": 1,
+  "title": "Apprentice",
+  "xp": 0,
+  "xpForNextLevel": 500,
+  "streak": {
+    "count": 0,
+    "lastActive": "1970-01-01"
+  },
+  "craftBadges": [
+    { "id": "test-weaver", "emoji": "🧪", "name": "Test Weaver", "condition": "10+ unit tests written in a sprint", "progress": 0, "target": 10, "xpBonus": 75, "earned": false },
+    { "id": "lore-scribe", "emoji": "📖", "name": "Lore Scribe", "condition": "3 documentation side quests completed", "progress": 0, "target": 3, "xpBonus": 60, "earned": false },
+    { "id": "bug-slayer", "emoji": "🐛", "name": "Bug Slayer", "condition": "10 issues resolved across any projects", "progress": 0, "target": 10, "xpBonus": 80, "earned": false },
+    { "id": "the-builder", "emoji": "🔨", "name": "The Builder", "condition": "5 features shipped to production", "progress": 0, "target": 5, "xpBonus": 100, "earned": false },
+    { "id": "ally", "emoji": "🤝", "name": "Ally", "condition": "5 collaboration side quests completed", "progress": 0, "target": 5, "xpBonus": 90, "earned": false },
+    { "id": "sentinel", "emoji": "🛡️", "name": "Sentinel", "condition": "Error handling + validation added to 3 modules", "progress": 0, "target": 3, "xpBonus": 70, "earned": false },
+    { "id": "investigator", "emoji": "🔬", "name": "Investigator", "condition": "1 root-cause analysis with full postmortem", "progress": 0, "target": 1, "xpBonus": 120, "earned": false }
+  ],
+  "xpLedger": [],
+  "updatedAt": "1970-01-01T00:00:00Z"
+}

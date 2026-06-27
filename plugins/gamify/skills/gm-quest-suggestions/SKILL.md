@@ -37,8 +37,8 @@ user *actually is*, not from a generic backlog.
 
 Activate this skill when ANY of the following is true:
 
-1. **No active quests** — `MILESTONES.md` shows all side quests as `⬜ Todo` or the
-   active side quest list is empty
+1. **No active quests** — `~/.gamify/quests.json` has no `sideQuests[]` with
+   `status == "active"`
 2. **Context mismatch** — user describes work that doesn't map to any open quest
    (e.g., "I'm building an auth service" but no auth-related quest is active)
 3. **Explicit request** — user says any of:
@@ -57,11 +57,11 @@ Activate this skill when ANY of the following is true:
 Before generating any quest, gather:
 
 ```
-A. MILESTONES.md state
-   - Current main quest
-   - Open side quests (active + todo)
-   - Completed quests (to avoid repetition)
-   - Player level + XP
+A. ~/.gamify/ state (quests.json + profile.json)
+   - Current main quest (mainQuests[] where status == "active")
+   - Open side quests (sideQuests[] where status == "active" or "todo")
+   - Completed quests (sideQuests[] where status == "completed", to avoid repetition)
+   - Player level + XP (profile.json)
 
 B. User's stated task (from the conversation)
    - What are they building or fixing?
@@ -126,6 +126,33 @@ Side effects (optional)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+### Persist the proposals
+
+After presenting the proposals (and before waiting for the user's choice), append each
+one to `~/.gamify/quests.json` → `suggested[]` with `status: "proposed"`. This is what
+the Guildboard web interface reads to display "Suggested Quests." Use this shape:
+
+```json
+{
+  "id": "PROP-001",
+  "name": "The Proving Ground",
+  "type": "Testing",
+  "emoji": "🧪",
+  "xp": 50,
+  "objective": "...",
+  "rationale": "...",
+  "outcomes": ["...", "..."],
+  "timeline": "1 session (~90 min)",
+  "difficulty": 2,
+  "proposedOn": "YYYY-MM-DD",
+  "status": "proposed"
+}
+```
+
+Allocate `PROP-NNN` ids by continuing from the highest existing id in `suggested[]`.
+Writing `quests.json` follows the gm-quest-tracker write protocol (whole-file rewrite,
+update `updatedAt`) — keep a single write path.
+
 ---
 
 ## Step 3 — Present Action Choices
@@ -153,7 +180,11 @@ What would you like to do?
 
 ### Accept (A/B/C)
 - Confirm the quest with a brief ceremony (one line, warm, specific)
-- Update MILESTONES.md: add to Active Side Quests with today's date + due date
+- Persist the transition (delegating the write to the gm-quest-tracker protocol —
+  one write path for all state):
+  - In `quests.json` → `suggested[]`, set the chosen proposal's `status` to `"accepted"`
+  - Create a `quests.json` → `sideQuests[]` entry with `status: "active"`, today's date,
+    and a `due` date (carry over name, type, emoji, xp from the proposal)
 - Format:
   ```
   ✅ QUEST ACCEPTED: [Quest Name]
@@ -164,13 +195,15 @@ What would you like to do?
 
 ### Negotiate
 - Acknowledge what they're changing and why it's reasonable
-- Adjust the relevant field
+- Adjust the relevant field (update the matching `suggested[]` entry in `quests.json`)
 - Restate the modified quest cleanly
 - Re-present the Accept option for the revised version
 - **Never push back on timeline requests** — trust the player knows their bandwidth
 
 ### Custom ("Find new quests about...")
 - Extract the topic from their message
+- Mark any still-`proposed` entries from the previous cycle as `status: "declined"`
+  in `quests.json` → `suggested[]` (keeps a history; the Guildboard only shows `proposed`)
 - Run Step 2 again with that topic as the primary context
 - Treat it as a fresh proposal cycle
 
@@ -206,7 +239,7 @@ testing quest works. "The Shadow" for anything does not.
   them — suggest completing one before accepting a new one.
 - **Timelines should be honest, not aspirational.** A docs quest that takes 3 hours
   shouldn't have a "30 min" timeline.
-- **Never duplicate a recently completed quest** (check `Completed Quests` in MILESTONES.md).
+- **Never duplicate a recently completed quest** (check completed `sideQuests[]` in `~/.gamify/quests.json`).
 
 ---
 
@@ -226,7 +259,7 @@ is fully met — not in anticipation.
 ## Example Invocations
 
 **User:** "I just finished the auth feature. What now?"
-→ Read MILESTONES.md, check for related open quests first. If none, generate proposals
+→ Read ~/.gamify/ state, check for related open quests first. If none, generate proposals
   around testing the auth feature, documenting it, or hardening error handling.
 
 **User:** "Find new quests about improving my test coverage"
@@ -235,6 +268,6 @@ is fully met — not in anticipation.
   test coverage report + gap analysis doc.
 
 **User:** "I don't know what to work on today"
-→ Read MILESTONES.md. If active quests exist, remind them warmly. If not, ask
+→ Read ~/.gamify/ state. If active quests exist, remind them warmly. If not, ask
   one focused question: "What's the thing that's been quietly following you?" —
   then use the answer to drive Step 2.

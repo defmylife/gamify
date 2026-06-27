@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "mainQuests": [
+    { "id": "MQ-1", "name": "The Awakening", "xp": 100, "status": "active", "description": "Set up your dev environment, initialize your project, write your first test.", "completedOn": null },
+    { "id": "MQ-2", "name": "First Blood", "xp": 200, "status": "locked", "description": "Ship a working feature to production. No matter how small.", "completedOn": null },
+    { "id": "MQ-3", "name": "The Refactor Ritual", "xp": 300, "status": "locked", "description": "Improve code quality of an existing module — measurable coverage increase.", "completedOn": null },
+    { "id": "MQ-4", "name": "The Architect's Eye", "xp": 400, "status": "locked", "description": "Design a system component with a decision doc and review session.", "completedOn": null },
+    { "id": "MQ-5", "name": "The Mentor's Path", "xp": 500, "status": "locked", "description": "Help a teammate through a problem they were stuck on. Document the solution.", "completedOn": null },
+    { "id": "MQ-6", "name": "The Void Starer", "xp": 600, "status": "locked", "description": "Debug a production incident from root cause to post-mortem.", "completedOn": null },
+    { "id": "MQ-7", "name": "Lore Keeper", "xp": 800, "status": "locked", "description": "Write documentation so good that it answers questions you haven't been asked yet.", "completedOn": null },
+    { "id": "MQ-8", "name": "The Sovereign", "xp": 1000, "status": "locked", "description": "Lead a project end-to-end: planning, execution, retro, and knowledge transfer.", "completedOn": null }
+  ],
+  "sideQuests": [],
+  "suggested": [],
+  "updatedAt": "1970-01-01T00:00:00Z"
+}

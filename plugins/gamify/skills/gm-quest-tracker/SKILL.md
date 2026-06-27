@@ -7,8 +7,9 @@ description: >
   or "update my quests". Also triggers at session end to write the session summary.
   Handles streak calculation (including broken streaks, without shame), XP ledger
   updates, level-up detection, and hidden achievement evaluation. Always writes
-  back to MILESTONES.md. Use this skill for any operation that changes player state —
-  do not update MILESTONES.md manually without following this skill's protocol.
+  back to the global JSON state in ~/.gamify/. Use this skill for any operation that
+  changes player state — do not edit the state files manually without following this
+  skill's protocol.
 ---
 # GM Quest Tracker
 
@@ -40,36 +41,61 @@ streak update, and achievement unlock flows through here.
 3. **Streak tracking** — increment, detect breaks, restart without shame
 4. **Side quest lifecycle** — assign, progress, complete, expire
 5. **Hidden achievement evaluation** — silent detection, dramatic reveal
-6. **MILESTONES.md write-back** — always the final step
+6. **JSON state write-back** — always the final step
+
+---
+
+## State Location & Files
+
+All player state is **global** and lives in a single directory: `~/.gamify/`. There is
+no project-local or repo-local state — one quest board follows the adventurer across
+every repository. Do not search the project dir or repo root.
+
+```
+~/.gamify/
+├── profile.json        # player identity, level, title, XP total, streak, craft-badge progress, XP ledger
+├── quests.json         # mainQuests, sideQuests (active/todo/completed), suggested proposals
+├── achievements.json   # unlocked achievements + per-session eval guards
+└── sessions.json       # session counter, append-only log, latest GM note
+```
+
+**Initialize state:** if `~/.gamify/` (or any of the four files) does not exist, create
+it before the first read. Copy the defaults from the plugin's
+`templates/gamify-state/{profile,quests,achievements,sessions}.json`, then fill in
+`player.name`, `player.joined`, and `streak.lastActive` with real values. The four
+files always exist together — never operate on a partial set.
 
 ---
 
 ## Step 1 — Read Current State
 
-Before any update, read MILESTONES.md fully. Extract:
+Before any update, read all four JSON files from `~/.gamify/` fully. Extract:
 
 ```
-Player Profile
-  - Level, XP, XP to next level
-  - Streak count, last active date
-  - Class
+profile.json
+  - level, title, xp, xpForNextLevel
+  - streak.count, streak.lastActive
+  - player.class
+  - craftBadges[] progress
+  - xpLedger[] (running total = sum of entries)
 
-Active Side Quests
-  - ID, Name, Type, XP, Due date, Status for each
+quests.json
+  - sideQuests[] where status == "active" or "todo" (id, name, type, xp, due)
+  - sideQuests[] where status == "completed" (names + completedOn — pattern detection)
+  - mainQuests[] (active/locked/completed chapters)
+  - suggested[] outstanding proposals
 
-Completed Quests
-  - Names and dates (to detect patterns)
+sessions.json
+  - sessionCounter
+  - log[] last 3 entries (streak + pattern detection)
 
-XP Ledger
-  - Running total
-  - Recent entries
-
-Session Log
-  - Last 3 sessions (for streak and pattern detection)
-
-Achievements Unlocked
-  - Already earned (never re-award)
+achievements.json
+  - unlocked[] (never re-award)
+  - evalGuards (checkedThisSession, lastEvalDate)
 ```
+
+Parse each file as JSON. If a file is malformed, stop and tell the user rather than
+overwriting it — never clobber state you can't read.
 
 ---
 
@@ -268,8 +294,9 @@ Never pre-announce. Reveal only when the trigger is definitively met.
 
 ## Craft Badge Tracker
 
-Track cumulative progress across quests. Update badge progress in MILESTONES.md
-after each relevant quest completion.
+Track cumulative progress across quests. Update `profile.json.craftBadges[].progress`
+after each relevant quest completion; set `earned: true` (and award the bonus) when
+`progress` reaches `target`.
 
 | Badge           | Condition                                      | XP Bonus |
 | --------------- | ---------------------------------------------- | -------- |
@@ -338,38 +365,47 @@ Your first side quests in this chapter:
 
 ---
 
-## MILESTONES.md Write-Back Protocol
+## JSON Write-Back Protocol
 
-After every state change, update MILESTONES.md in this order:
+Each file is rewritten **whole**: read it, mutate the parsed object in memory, then
+write the complete JSON back (never patch a fragment). After every state change, write
+the affected files in this fixed order:
 
-1. **Player Profile block** — Level, XP, Streak, Last Active
-2. **Active Side Quests table** — status changes, new entries, completions moved out
-3. **Completed Quests table** — append newly completed quest
-4. **Achievements Unlocked table** — append any new achievements
-5. **XP Ledger** — append new row(s) with source, XP, date
-6. **Session Log** — append new session block
-7. **Game Master Notes** — update with today's note (replace previous if same day)
-8. **Footer** — update "Last updated by: gamify_hook.py | [timestamp]"
+1. **profile.json** — `level`, `title`, `xp`, `xpForNextLevel`, `streak`, `craftBadges`,
+   and append `xpLedger[]` entries (`{ "source", "xp", "date" }`)
+2. **quests.json** — `sideQuests[]` status transitions (todo → active → completed, with
+   `completedOn`), new entries, `mainQuests[]` unlocks, `suggested[]` status changes
+3. **achievements.json** — append to `unlocked[]`; update `evalGuards`
+   (`lastEvalDate`, `checkedThisSession`)
+4. **sessions.json** — increment `sessionCounter`, append to `log[]`, replace `gmNote`
 
-**Atomic rule:** All 8 steps happen together. Never write partial state.
-If you cannot complete all steps, say so and ask the user which to prioritize.
+Set each touched file's `updatedAt` to the current ISO-8601 timestamp.
+
+**Atomic rule:** A single event updates all the files it touches, together. Never leave
+state half-applied. If you cannot complete the write set, say so and apply nothing —
+do not write a partial event.
 
 ---
 
 ## Session Log Entry Format
 
+Append one object to `sessions.json` → `log[]`:
+
+```json
+{
+  "session": 12,
+  "date": "YYYY-MM-DD",
+  "focusArea": "comma-separated activity types",
+  "questsActive": ["quest names"],
+  "progressNotes": "1–2 sentences on what moved forward",
+  "xpDelta": 0,
+  "achievements": ["names"],
+  "streak": 0
+}
 ```
----
-Date       : [YYYY-MM-DD]
-Session #  : [N]
-Focus Area : [comma-separated activity types]
-Quests Active  : [quest names]
-Progress Notes : [1–2 sentences on what moved forward]
-XP Delta   : +[N]
-Achievements   : [names, or "None"]
-Streak     : [N] days
----
-```
+
+The Game Master note for the day goes in `sessions.json.gmNote`
+(`{ "date", "text" }`) — replace it if there is already an entry for today.
 
 ---
 
@@ -380,4 +416,4 @@ Streak     : [N] days
 - Never marks a quest "incomplete" because it wasn't done perfectly
 - Never awards an achievement twice
 - Never writes generic GM notes ("good session!") — always specific to today
-- Never leaves MILESTONES.md in partial state
+- Never leaves the JSON state in partial state — all touched files write together

@@ -5,5 +5,9 @@ services:
       - "7777:7777"
     volumes:
       - ~/.claude/projects:/data/projects:ro
+      - ~/.gamify:/data/gamify:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - PROJECTS_DIR=/data/projects
+      - GAMIFY_DIR=/data/gamify
+      - TZ=Asia/Bangkok
