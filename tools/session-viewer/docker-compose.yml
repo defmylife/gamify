@@ -1,0 +1,9 @@
+services:
+  session-viewer:
+    build: .
+    ports:
+      - "7777:7777"
+    volumes:
+      - ~/.claude/projects:/data/projects:ro
+    environment:
+      - PROJECTS_DIR=/data/projects

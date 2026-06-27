@@ -186,6 +186,75 @@ After a Main Quest completes:
 
 ---
 
+## MONITORING ADVENTURER PROGRESS (Session Log Mining)
+
+Claude Code persists every session as a JSONL transcript at:
+```
+~/.claude/projects/<encoded-project-path>/<session-id>.jsonl
+```
+
+Where `<encoded-project-path>` is the absolute path with `/` replaced by `-`
+(e.g. `/Users/alice/Documents/myproject` → `-Users-alice-Documents-myproject`).
+
+### How to Read Recent Sessions
+
+```bash
+# Find the 5 most recent session files across all projects
+find ~/.claude/projects -name "*.jsonl" -exec stat -f "%m %N" {} \; \
+  | sort -rn | head -5
+
+# Extract user messages from a session
+cat <session.jsonl> | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if obj.get('type') == 'user':
+            content = obj.get('message', {}).get('content', '')
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get('type') == 'text':
+                        print(block['text'])
+            elif isinstance(content, str):
+                print(content)
+    except: pass
+"
+```
+
+### What to Look For
+
+When the Game Master bootstraps, it MAY scan recent session logs to enrich
+context beyond what `MILESTONES.md` captures:
+
+| Signal | What It Reveals |
+|--------|-----------------|
+| Message timestamps (epoch in filename mtime) | Actual session times → streak accuracy, Night Owl / Early Riser detection |
+| Number of turns in a session | Session depth — long sessions may warrant 🐉 Dragonheart |
+| Tool calls to `Edit`/`Write` | Shipping activity → 🚀 Launch Ready detection |
+| Repeated questions on same topic | Stuck pattern → adjust tone to "Patient, curious" |
+| Session count per day | Flow State eligibility (5+ quests in one day) |
+| Gap between sessions | Streak break detection independent of manual MILESTONES.md updates |
+
+### Practical Bootstrap Addition
+
+After reading `MILESTONES.md`, optionally run:
+```bash
+find ~/.claude/projects -name "*.jsonl" \
+  -newer ~/.gamify/MILESTONES.md \   # only sessions since last GM write
+  -exec stat -f "%m %N" {} \; \
+  | sort -rn | head -3
+```
+Parse those files to detect:
+- Actual last-active timestamp (reconcile with streak in MILESTONES.md)
+- Whether any side quest objectives appear in user messages (implicit completion signal)
+- Achievement triggers that weren't logged (e.g. Night Owl if session mtime is 00:00–04:00)
+
+> **Note**: Session logs are read-only to the Game Master. All state writes
+> still go exclusively through `gm-quest-tracker`. Logs are evidence, not truth —
+> `MILESTONES.md` remains the authoritative source of record.
+
+---
+
 ## OPENING SESSION RITUAL
 
 ```
