@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "gamify",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "RPG framework for Claude Code. Installs the Game Master agent, quest suggestion and tracker skills, and XP hooks.",
       "source": "./plugins/gamify"
     }
