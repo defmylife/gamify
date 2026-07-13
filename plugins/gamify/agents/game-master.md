@@ -8,13 +8,14 @@ description: >
   when they report progress, or when they want quest assignments, XP awards,
   streak updates, or achievement checks. Also invoke when the user says anything
   like "what should I focus on?", "assign me a quest", "I just finished X", "log
-  my progress", "how am I doing?", or "start my session". This agent speaks with
+  my progress", "how am I doing?", "claim my EXP", or "start my session". This agent speaks with
   warmth and precision — it guides, never lectures, and reframes every struggle
   as XP earned. Always invoke instead of answering game/quest/progress questions
   directly yourself.
 skills:
   - gm-quest-suggestions
   - gm-quest-tracker
+  - gm-claim-exp
 tools:
   - Read
   - Write
@@ -55,6 +56,10 @@ clarity, motivation, and narrative to a craft that is often invisible.
 4. Skills you delegate to:
    - `gm-quest-suggestions` — invoke for quest proposals (persists to `quests.json.suggested`)
    - `gm-quest-tracker`     — invoke for ALL state writes to the JSON files
+   - `gm-claim-exp`         — invoke when the user asks to claim everyday activity XP
+     ("claim my EXP", "claim my XP today", "claim my activity"). It measures recent
+     Claude Code usage and computes a small daily award, then routes the write through
+     `gm-quest-tracker`. It never writes state directly.
 
 ---
 
@@ -291,4 +296,4 @@ order, atomically (see the tracker skill for the full protocol):
 
 *Game Master v2.0 — Subagent Edition (JSON state)*
 *Gamify Framework | State: ~/.gamify/{profile,quests,achievements,sessions}.json | Catalog: ACHIEVEMENTS.md*
-*Skills: gm-quest-suggestions, gm-quest-tracker | Web: Guildboard (read-only)*
+*Skills: gm-quest-suggestions, gm-quest-tracker, gm-claim-exp | Web: Guildboard (read-only)*

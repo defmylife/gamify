@@ -58,7 +58,8 @@ gamify-claude-plugin/
 │   └── game-master.md       # The Game Master subagent
 ├── skills/
 │   ├── gm-quest-suggestions/ # Quest proposal engine
-│   └── gm-quest-tracker/    # XP, streaks, achievements, state
+│   ├── gm-quest-tracker/    # XP, streaks, achievements, state
+│   └── gm-claim-exp/        # Everyday activity XP (routes writes through gm-quest-tracker)
 ├── hooks/
 │   └── hooks.json           # Lifecycle hooks (PreToolUse, PostToolUse, Stop)
 └── templates/
@@ -74,6 +75,9 @@ When you have no active quests, or your work drifts from your current quest cont
 
 ### Quest Tracker Skill
 Owns all writes to the `~/.gamify/` JSON files. Handles quest completions, XP awards, streak updates, level-up detection, craft badge progress, and all hidden achievement triggers — atomically (each touched file rewritten whole). It never writes partial state.
+
+### Claim EXP Skill
+Rewards everyday effort, not just finished quests. Say *"claim my EXP today"* and the Game Master reads your recent Claude Code sessions, grants a small **activity XP** award tiered by daily effort (Light +10 / Moderate +20 / Heavy +35), plus **+15** on days whose work relates to an active quest. It backfills every unclaimed day since your last claim (one claim per day, idempotent), and — like everything else — routes the actual write through `gm-quest-tracker`. Optional opt-in automation lets you claim hands-free on a schedule (`claude -p "claim my activity XP for today"`).
 
 ### Lifecycle Hooks
 Three hooks fire automatically in every Claude Code session:
@@ -187,8 +191,10 @@ gamify-claude-plugin/
 ├── skills/
 │   ├── gm-quest-suggestions/
 │   │   └── SKILL.md         # Quest proposal engine
-│   └── gm-quest-tracker/
-│       └── SKILL.md         # State management: XP, streaks, achievements
+│   ├── gm-quest-tracker/
+│   │   └── SKILL.md         # State management: XP, streaks, achievements
+│   └── gm-claim-exp/
+│       └── SKILL.md         # Everyday activity XP (delegates writes to gm-quest-tracker)
 ├── hooks/
 │   └── hooks.json           # PreToolUse / PostToolUse / Stop handlers
 ├── scripts/

@@ -158,6 +158,39 @@ User wraps up or Claude's Stop hook fires.
 3. Write full session entry to Session Log
 4. Update "Last Active" date
 
+### E. Activity Claim
+
+`gm-claim-exp` hands over a computed **Activity Claim** — a list of per-day awards for
+everyday Claude Code usage (small XP, with an optional quest bonus). This skill performs the
+write; `gm-claim-exp` never writes state itself.
+
+The claim payload is a list of per-day awards:
+
+```json
+[
+  { "date": "YYYY-MM-DD", "tier": "moderate", "baseXp": 20, "questBonus": 15, "xp": 35 }
+]
+```
+
+**Actions:**
+
+1. **Guard against double-claims** — for each day in the payload, if its `date` already
+   appears in `sessions.json.activity.claimed[]`, skip it (already paid). If every day is
+   already claimed, apply nothing and report "nothing new to claim."
+2. For each remaining day, append an `xpLedger[]` entry to `profile.json`:
+   `{ "source": "activity:YYYY-MM-DD"` (or `"activity-quest:YYYY-MM-DD"` when
+   `questBonus > 0`)`, "xp": <day.xp>, "date": "YYYY-MM-DD" }`.
+3. Recompute `xp` (sum of the ledger), then check the **XP Thresholds** table for level-up;
+   update `level`, `title`, `xpForNextLevel` and emit the LEVEL-UP ceremony if crossed.
+4. Update `sessions.json.activity`: set `lastClaimAt` to the current ISO-8601 timestamp, and
+   append each newly-claimed day to `activity.claimed[]` as
+   `{ date, tier, baseXp, questBonus, xp, claimedAt }`.
+5. Optionally append a brief activity note to `log[]` and/or refresh `gmNote`.
+
+Activity XP is intentionally small (tier base +10/+20/+35, quest bonus +15) so quest rewards
+remain the meaningful driver. Do not run streak or hidden-achievement logic for a claim
+unless a claimed day's evidence also independently satisfies those triggers.
+
 ---
 
 ## XP Thresholds and Level-Up
@@ -377,9 +410,12 @@ the affected files in this fixed order:
    `completedOn`), new entries, `mainQuests[]` unlocks, `suggested[]` status changes
 3. **achievements.json** — append to `unlocked[]`; update `evalGuards`
    (`lastEvalDate`, `checkedThisSession`)
-4. **sessions.json** — increment `sessionCounter`, append to `log[]`, replace `gmNote`
+4. **sessions.json** — increment `sessionCounter`, append to `log[]`, replace `gmNote`;
+   for an **Activity Claim** also update `activity` (`lastClaimAt`, append `claimed[]`)
 
-Set each touched file's `updatedAt` to the current ISO-8601 timestamp.
+Set each touched file's `updatedAt` to the current ISO-8601 timestamp. An Activity Claim
+touches `profile.json` (ledger/xp/level) and `sessions.json` (activity + optional log/note);
+both write together under the same fixed order and atomic rule.
 
 **Atomic rule:** A single event updates all the files it touches, together. Never leave
 state half-applied. If you cannot complete the write set, say so and apply nothing —
