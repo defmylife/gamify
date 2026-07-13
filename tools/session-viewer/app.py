@@ -67,6 +67,31 @@ details .turn-body { background: #161b22; }
 .gb-ach-emoji { font-size: 18px; }
 .pill { display: inline-block; padding: 1px 7px; border-radius: 12px; font-size: 11px; background: #1f2d3d; color: #58a6ff; border: 1px solid #1f4068; }
 .pill-prop { background: #2d2a1f; color: #e3b341; border-color: #5c4d1f; }
+/* --- Idle page --- */
+.idle-hero { text-align: center; margin: 40px 0 32px; }
+.idle-hero h1 { font-size: 22px; }
+.idle-hero .subtitle { margin-top: 8px; }
+.exp-field { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; padding: 20px 0 80px; }
+.exp-float { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px 18px; width: 260px; animation: drift 6s ease-in-out infinite; }
+.exp-float:hover { border-color: #58a6ff; }
+.exp-title { font-size: 14px; font-weight: 600; color: #e6edf3; }
+.exp-cap { font-size: 12px; color: #8b949e; margin-top: 6px; }
+.exp-more { display: flex; align-items: center; justify-content: center; width: 260px; border: 1px dashed #30363d; border-radius: 12px; padding: 16px 18px; color: #8b949e; font-size: 13px; }
+.exp-more:hover { border-color: #58a6ff; color: #58a6ff; }
+@keyframes drift { 0%,100% { transform: translateY(-6px); } 50% { transform: translateY(6px); } }
+@keyframes fabpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(63,185,80,0.5); } 50% { box-shadow: 0 0 0 10px rgba(63,185,80,0); } }
+.claim-fab { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: linear-gradient(90deg,#3fb950,#58a6ff); color: #0d1117; font-weight: 700; font-size: 14px; padding: 12px 22px; border: none; border-radius: 999px; cursor: pointer; animation: fabpulse 2.4s ease-in-out infinite; display: flex; align-items: center; gap: 8px; }
+.claim-fab:hover { opacity: 0.92; }
+.claim-badge { background: #0d1117; color: #e6edf3; border-radius: 999px; padding: 0 8px; font-size: 12px; font-weight: 700; }
+.claim-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(1,4,9,0.7); align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+.claim-modal-overlay.open { display: flex; }
+.claim-modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; max-width: 420px; width: 100%; }
+.claim-modal h2 { font-size: 17px; color: #e6edf3; margin-bottom: 12px; }
+.claim-modal p { font-size: 13px; color: #8b949e; line-height: 1.6; margin-bottom: 12px; }
+.claim-modal code { display: block; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px; color: #3fb950; font-size: 13px; margin: 12px 0; }
+.claim-modal .btn { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 13px; }
+.claim-modal .btn:hover { border-color: #58a6ff; }
+@media (prefers-reduced-motion: reduce) { .exp-float, .claim-fab { animation: none; } }
 """
 
 def html_page(title: str, body: str) -> str:
@@ -110,6 +135,34 @@ def get_session_title(entries) -> Optional[str]:
                 return t.strip()
     return None
 
+def get_first_user_text(entries, limit: int = 60) -> Optional[str]:
+    """First real user message as a short, human-readable label."""
+    for e in entries:
+        if e.get("type") != "user":
+            continue
+        content = e.get("message", {}).get("content", "")
+        text = ""
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    break
+                if isinstance(block, str):
+                    text = block
+                    break
+        text = " ".join(text.split())  # collapse whitespace/newlines
+        # skip tool results, command wrappers, injected reminders
+        if not text or text.startswith(("<", "[Request", "Caveat:")):
+            continue
+        return text[:limit] + ("…" if len(text) > limit else "")
+    return None
+
+def session_label(entries, stem: str) -> str:
+    """Human-readable session name: custom title, else first user message, else id."""
+    return get_session_title(entries) or get_first_user_text(entries) or stem[:8]
+
 def count_turns(entries) -> int:
     return sum(1 for e in entries if e.get("type") in ("user", "assistant"))
 
@@ -120,6 +173,110 @@ def format_ts(ts: str) -> str:
         return local.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return ts[:16] if ts else "—"
+
+def parse_ts(ts: str) -> Optional[datetime]:
+    """Parse an ISO-8601 timestamp to an aware datetime, or None."""
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except (ValueError, AttributeError):
+        return None
+
+def relative_time(dt: datetime) -> str:
+    """Friendly relative time, e.g. '2h ago', 'yesterday', '3d ago'."""
+    now = datetime.now(timezone.utc)
+    delta = now - dt
+    secs = delta.total_seconds()
+    if secs < 0:
+        return "just now"
+    mins = int(secs // 60)
+    if mins < 1:
+        return "just now"
+    if mins < 60:
+        return f"{mins}m ago"
+    hours = mins // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days == 1:
+        return "yesterday"
+    if days < 7:
+        return f"{days}d ago"
+    weeks = days // 7
+    return f"{weeks}w ago"
+
+def latest_entry_ts(entries) -> Optional[datetime]:
+    """The newest entry timestamp in a session (authoritative 'last active')."""
+    latest = None
+    for e in entries:
+        dt = parse_ts(e.get("timestamp", ""))
+        if dt and (latest is None or dt > latest):
+            latest = dt
+    return latest
+
+def nav_html(active: str) -> str:
+    """Shared top nav. `active` is one of: home, sessions, guildboard."""
+    def link(href: str, key: str, label: str) -> str:
+        weight = ' style="font-weight:600;color:#e6edf3"' if key == active else ""
+        return f'<a href="{href}"{weight}>{label}</a>'
+    return (
+        '<div class="nav">'
+        + link("/", "home", "🏠 Home")
+        + link("/sessions", "sessions", "📜 Sessions")
+        + link("/guildboard", "guildboard", "⚔️ Guildboard")
+        + "</div>"
+    )
+
+def experiences_since_claim():
+    """Sessions whose latest activity is newer than activity.lastClaimAt.
+
+    Returns (experiences, last_claim_dt). Only the top few shown as cards get
+    fully parsed for an accurate title/last-active; the rest are counted by mtime
+    so continued (resumed) sessions are still included without parsing every file.
+    """
+    sessions_state = load_state()["sessions"]
+    last_claim_raw = (sessions_state.get("activity") or {}).get(
+        "lastClaimAt", "1970-01-01T00:00:00Z"
+    )
+    last_claim = parse_ts(last_claim_raw) or datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    candidates = []
+    for project_enc, path in iter_sessions():
+        try:
+            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        except OSError:
+            continue
+        if mtime > last_claim:
+            candidates.append((mtime, project_enc, path))
+
+    candidates.sort(key=lambda c: c[0], reverse=True)
+
+    experiences = []
+    PARSE_LIMIT = 4
+    for i, (mtime, project_enc, path) in enumerate(candidates):
+        if i < PARSE_LIMIT:
+            try:
+                entries = parse_session(path)
+                title = session_label(entries, path.stem)
+                last_active = latest_entry_ts(entries) or mtime
+            except Exception:
+                title = path.stem[:8]
+                last_active = mtime
+        else:
+            title = path.stem[:8]
+            last_active = mtime
+        experiences.append({
+            "project_enc": project_enc,
+            "project": decode_project_name(project_enc),
+            "session_id": path.stem,
+            "title": title,
+            "last_active": last_active,
+            "rel": relative_time(last_active),
+        })
+
+    return experiences, last_claim
 
 def render_content(content) -> str:
     if isinstance(content, str):
@@ -188,13 +345,80 @@ def load_state():
 
 
 @app.get("/", response_class=HTMLResponse)
-def index():
+def idle():
+    experiences, _last_claim = experiences_since_claim()
+    count = len(experiences)
+
+    SHOWN = 4
+    cards = []
+    for i, x in enumerate(experiences[:SHOWN]):
+        proj_label = x["project"].split("/")[-1] or x["project"]
+        delay = f"{(i % SHOWN) * 0.8:.1f}s"
+        cards.append(f"""
+<a href="/session/{x['project_enc']}/{x['session_id']}" style="display:block">
+  <div class="exp-float" style="animation-delay:{delay}">
+    <div class="exp-title">{x['title']}</div>
+    <div class="exp-cap">{proj_label} · {x['rel']}</div>
+  </div>
+</a>""")
+
+    if count > SHOWN:
+        cards.append(
+            f'<a href="/sessions" class="exp-more">+{count - SHOWN} more experiences →</a>'
+        )
+
+    if count == 0:
+        field = (
+            '<div class="empty">No new experiences since your last claim. '
+            'Go forge some. ⚒️</div>'
+        )
+        fab = ""
+        modal = ""
+    else:
+        field = f'<div class="exp-field">{"".join(cards)}</div>'
+        fab = (
+            '<button class="claim-fab" onclick="openClaim()">✨ Claim EXP '
+            f'<span class="claim-badge">{count}</span></button>'
+        )
+        modal = """
+<div class="claim-modal-overlay" id="claimModal" onclick="if(event.target===this)closeClaim()">
+  <div class="claim-modal">
+    <h2>✨ Claim your experiences</h2>
+    <p>The Guildboard can't grant XP — only the Game Master can. Open your terminal
+       in Claude Code and say:</p>
+    <code>claim my EXP today</code>
+    <p>The Game Master backfills every unclaimed day since your last claim, so nothing
+       is lost.</p>
+    <button class="btn" onclick="closeClaim()">Got it</button>
+  </div>
+</div>
+<script>
+function openClaim(){document.getElementById('claimModal').classList.add('open');}
+function closeClaim(){document.getElementById('claimModal').classList.remove('open');}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeClaim();});
+</script>"""
+
+    body = f"""
+{nav_html("home")}
+<div class="idle-hero">
+  <h1>The guild hall is quiet.</h1>
+  <div class="subtitle">Your deeds linger in the air, waiting to be claimed.</div>
+</div>
+{field}
+{fab}
+{modal}
+"""
+    return HTMLResponse(html_page("Gamify", body))
+
+
+@app.get("/sessions", response_class=HTMLResponse)
+def sessions_page():
     sessions = []
     for project_enc, path in iter_sessions():
         try:
             entries = parse_session(path)
             mtime = path.stat().st_mtime
-            title = get_session_title(entries) or path.stem[:8]
+            title = session_label(entries, path.stem)
             turns = count_turns(entries)
             first_ts = next((e.get("timestamp", "") for e in entries if e.get("timestamp")), "")
             sessions.append({
@@ -212,7 +436,7 @@ def index():
     sessions.sort(key=lambda s: s["mtime"], reverse=True)
 
     if not sessions:
-        body = '<h1>Claude Code Sessions</h1><div class="empty">No sessions found in ' + str(PROJECTS_DIR) + '</div>'
+        body = nav_html("sessions") + '<h1>Claude Code Sessions</h1><div class="empty">No sessions found in ' + str(PROJECTS_DIR) + '</div>'
         return HTMLResponse(html_page("Claude Sessions", body))
 
     cards = []
@@ -234,7 +458,7 @@ def index():
 </a>""")
 
     body = f"""
-<div class="nav"><a href="/">📜 Sessions</a><a href="/guildboard">⚔️ Guildboard</a></div>
+{nav_html("sessions")}
 <h1>Claude Code Sessions</h1>
 <div class="subtitle">{PROJECTS_DIR} · {len(sessions)} sessions</div>
 <div class="session-list">{"".join(cards)}</div>
@@ -249,7 +473,7 @@ def session_detail(project_enc: str, session_id: str):
         raise HTTPException(404, "Session not found")
 
     entries = parse_session(path)
-    title = get_session_title(entries) or session_id[:8]
+    title = session_label(entries, session_id)
     proj_label = decode_project_name(project_enc).split("/")[-1]
 
     turns_html = []
@@ -300,7 +524,7 @@ def session_detail(project_enc: str, session_id: str):
 </div>""")
 
     body = f"""
-<a class="back" href="/">← All sessions</a>
+<a class="back" href="/sessions">← All sessions</a>
 <div class="breadcrumb">{proj_label}</div>
 <h1>{title}</h1>
 <div class="subtitle" style="margin-bottom:24px">{session_id}</div>
@@ -316,7 +540,7 @@ def guildboard():
     quests = state["quests"]
     achievements = state["achievements"]
 
-    nav = '<div class="nav"><a href="/">📜 Sessions</a><a href="/guildboard">⚔️ Guildboard</a></div>'
+    nav = nav_html("guildboard")
 
     if not profile:
         body = nav + (

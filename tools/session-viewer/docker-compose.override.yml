@@ -1,0 +1,9 @@
+# Dev override — auto-loaded by `docker compose` (no -f needed).
+# Bind-mounts app.py and runs uvicorn with --reload so code edits take
+# effect instantly, no rebuild required. Delete this file (or run with
+# `docker compose -f docker-compose.yml up`) for a production-style run.
+services:
+  session-viewer:
+    volumes:
+      - ./app.py:/app/app.py:ro
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7777", "--reload"]
