@@ -56,20 +56,22 @@ every repository. Do not search the project dir or repo root.
 ├── profile.json        # player identity, level, title, XP total, streak, craft-badge progress, XP ledger
 ├── quests.json         # mainQuests, sideQuests (active/todo/completed), suggested proposals
 ├── achievements.json   # unlocked achievements + per-session eval guards
-└── sessions.json       # session counter, append-only log, latest GM note
+├── sessions.json       # session counter, append-only log, latest GM note
+└── skills.json         # forged skills (gm-skill-forge) + forge guards
 ```
 
-**Initialize state:** if `~/.gamify/` (or any of the four files) does not exist, create
+**Initialize state:** if `~/.gamify/` (or any of the five files) does not exist, create
 it before the first read. Copy the defaults from the plugin's
-`templates/gamify-state/{profile,quests,achievements,sessions}.json`, then fill in
-`player.name`, `player.joined`, and `streak.lastActive` with real values. The four
-files always exist together — never operate on a partial set.
+`templates/gamify-state/{profile,quests,achievements,sessions,skills}.json`, then fill in
+`player.name`, `player.joined`, and `streak.lastActive` with real values. The five
+files always exist together — never operate on a partial set. On an older install missing
+only `skills.json`, create it from the template and carry on; that is not a corrupt state.
 
 ---
 
 ## Step 1 — Read Current State
 
-Before any update, read all four JSON files from `~/.gamify/` fully. Extract:
+Before any update, read all five JSON files from `~/.gamify/` fully. Extract:
 
 ```
 profile.json
@@ -92,6 +94,10 @@ sessions.json
 achievements.json
   - unlocked[] (never re-award)
   - evalGuards (checkedThisSession, lastEvalDate)
+
+skills.json
+  - forged[] (id, slug, status — never re-forge an existing slug)
+  - forgeGuards (cooldown + evidence thresholds, declinedSlugs)
 ```
 
 Parse each file as JSON. If a file is malformed, stop and tell the user rather than
@@ -123,6 +129,10 @@ User reports finishing a quest (side or main).
 5. Check for level-up (see XP Thresholds)
 6. If main quest completed → unlock next main quest
 7. Write ceremony output (see Completion Ceremony format)
+8. **Forge check** — only for main quests, or side quests worth **≥ 75 XP**. Evaluate the
+   forge guards (see `### F. Skill Forge`); `forgeGuards.lastForgeQuestId` must not equal
+   this quest's id. If every guard passes, invoke `gm-skill-forge` in **offer mode**. If any
+   guard fails, say nothing at all — silence is the correct output.
 
 ### B. Progress Update
 
@@ -191,6 +201,91 @@ Activity XP is intentionally small (tier base +10/+20/+35, quest bonus +15) so q
 remain the meaningful driver. Do not run streak or hidden-achievement logic for a claim
 unless a claimed day's evidence also independently satisfies those triggers.
 
+### F. Skill Forge
+
+`gm-skill-forge` distills the adventurer's session history into a custom Claude skill. It
+composes the SKILL.md **in memory** and hands it here; this skill performs every write —
+both the `skills.json` record and the markdown file itself. The record and the file must
+agree, or the Guildboard displays a skill that does not exist. One writer, one unit.
+
+**Payload:**
+
+```json
+{
+  "event": "skill-forge",
+  "action": "draft",
+  "trigger": "level-up",
+  "record": { "...forged[] record, see schema below..." },
+  "skillMarkdown": "---\nname: ...\n---\n# ...",
+  "guards": { "lastForgeAt": "<ISO-8601>", "lastForgeLevel": 4 }
+}
+```
+
+`action` ∈ `draft | equip | decline | retire`.
+`trigger` ∈ `manual | level-up | quest-completion | session:<id>`.
+
+**A `forged[]` record:**
+
+```json
+{
+  "id": "FORGE-001",
+  "slug": "verify-before-declaring-done",
+  "name": "The Second Look",
+  "emoji": "🔍",
+  "type": "Quality",
+  "pattern": "Declares work finished before running the suite; corrected in 6 of 9 sessions.",
+  "rationale": "Highest steering cost in the window, and trivially specifiable.",
+  "triage": { "frequency": 3, "spread": 1, "steeringCost": 3, "shelfLife": 3,
+              "specifiability": 3, "total": 13, "floor": 10, "verdict": "forge" },
+  "rejected": [ { "slug": "commit-message-style", "total": 7, "why": "shelf life 1" } ],
+  "evidence": { "sessionIds": ["9f2c1a4e-..."], "projects": ["-Users-me-Documents-gamify"],
+                "sessionCount": 9, "window": { "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" } },
+  "paths": { "armory": "~/.gamify/forge/verify-before-declaring-done/SKILL.md",
+             "live": "~/.claude/skills/verify-before-declaring-done/SKILL.md" },
+  "authoredWith": "embedded-template",
+  "trigger": "level-up",
+  "status": "drafted",
+  "forgedOn": "YYYY-MM-DD", "equippedOn": null, "retiredOn": null, "xpAwarded": 0
+}
+```
+
+**Forge guards — every one must pass, or refuse and apply nothing:**
+
+| Guard | Rule |
+| ----- | ---- |
+| Cooldown | `now - forgeGuards.lastForgeAt >= cooldownDays` (default 14) |
+| Evidence | `>= minSessions` (5) distinct transcripts in the trailing 30 days |
+| Pattern depth | the winning pattern appears in `>= minPatternSessions` (3) of them |
+| Queue | no existing record with `status == "drafted"` (`maxDrafted`, default 1) |
+| Refusals | winning slug not in `forgeGuards.declinedSlugs` |
+| Floor | triage total ≥ 10, frequency ≥ 2, specifiability ≥ 2 |
+| Level-up path | `forgeGuards.lastForgeLevel < level` |
+| Quest path | `forgeGuards.lastForgeQuestId != questId` |
+
+On an **auto-trigger**, a failed guard means total silence. On a **manual** request, name the
+guard that blocked it. Manual requests bypass the cooldown and `maxDrafted` — never the floor
+or `declinedSlugs`.
+
+**Actions:**
+
+1. **`draft`** — refuse if any guard fails. Otherwise `mkdir -p ~/.gamify/forge/<slug>/` and
+   write `SKILL.md` from `skillMarkdown` **verbatim**; append the record to `skills.json.forged[]`
+   with `status: "drafted"`; set `forgeGuards.lastForgeAt`, and `lastForgeLevel` /
+   `lastForgeQuestId` for the triggering path. **No XP, no ledger entry.** Refuse a slug that
+   already exists under `~/.claude/skills/`. An auto-triggered forge may never go past `drafted`.
+2. **`equip`** — copy `paths.armory` → `paths.live` (`~/.claude/skills/<slug>/SKILL.md`,
+   creating the directory). Set `status: "equipped"`, `equippedOn`, `xpAwarded: 40`. Append
+   `{ "source": "forge:FORGE-00N", "xp": 40, "date": "YYYY-MM-DD" }` to `profile.xpLedger[]`,
+   recompute `xp`, and run level-up detection. Equipping is the milestone; forging is free.
+3. **`decline`** — set `status: "declined"`, append the slug to `forgeGuards.declinedSlugs`.
+   No file moves. That pattern is never offered again.
+4. **`retire`** — remove `paths.live` only; set `status: "retired"` and `retiredOn`. The armory
+   copy survives as history and the record is never deleted. No XP clawback. A retired skill
+   may be equipped again later.
+
+The armory (`~/.gamify/forge/`) is deliberately outside Claude Code's skill discovery path, so
+a drafted skill is inert until the adventurer equips it.
+
 ---
 
 ## XP Thresholds and Level-Up
@@ -229,6 +324,13 @@ On level-up:
 - Examples: "The 5-Minute Explainer", "Incident Whisperer", "Test-First Instinct",
   "The Green Path" (deploys confidently), "Code Smell Sense", "Deadline Alchemy"
 - Derive from their recent session log and completed quest types
+
+**Forge check (level-up).** After the LEVEL UP ceremony, evaluate the forge guards in
+`### F. Skill Forge`. If all pass, invoke `gm-skill-forge` in **offer mode**, passing the
+Ability Unlocked you just named as a hint so the offer and the ability tell one story —
+the ability stops being flavor and becomes something they can actually hold. One forge per
+level-up (`forgeGuards.lastForgeLevel < level`). Never equip inside a ceremony, and say
+nothing at all when a guard fails.
 
 ---
 
@@ -407,19 +509,34 @@ the affected files in this fixed order:
 1. **profile.json** — `level`, `title`, `xp`, `xpForNextLevel`, `streak`, `craftBadges`,
    and append `xpLedger[]` entries (`{ "source", "xp", "date" }`)
 2. **quests.json** — `sideQuests[]` status transitions (todo → active → completed, with
-   `completedOn`), new entries, `mainQuests[]` unlocks, `suggested[]` status changes
+   `completedOn`), new entries, `mainQuests[]` unlocks, `suggested[]` status changes.
+   Each active/todo side quest carries a `progress` object `{ "done": <int>, "total": <int> }`
+   — `total` defaults to the number of `objectives`; bump `done` as objectives are met so the
+   Guildboard/Profile progress bars stay accurate. On completion set `done == total`.
 3. **achievements.json** — append to `unlocked[]`; update `evalGuards`
    (`lastEvalDate`, `checkedThisSession`)
 4. **sessions.json** — increment `sessionCounter`, append to `log[]`, replace `gmNote`;
    for an **Activity Claim** also update `activity` (`lastClaimAt`, append `claimed[]`)
+5. **skills.json** — for a **Skill Forge** event: append to / update `forged[]` and update
+   `forgeGuards`. Create the file from `templates/gamify-state/skills.json` if it is absent
 
 Set each touched file's `updatedAt` to the current ISO-8601 timestamp. An Activity Claim
 touches `profile.json` (ledger/xp/level) and `sessions.json` (activity + optional log/note);
 both write together under the same fixed order and atomic rule.
 
+A **Skill Forge** `draft` touches only `skills.json` plus the armory markdown file; an
+`equip` touches `profile.json` (ledger/xp/level) and `skills.json`, and copies the markdown
+into `~/.claude/skills/`. The markdown files under `~/.gamify/forge/` and `~/.claude/skills/`
+are artifacts, not state — they still write together with their record under the atomic rule
+below, because a record without its file is a broken promise on the Guildboard.
+
 **Atomic rule:** A single event updates all the files it touches, together. Never leave
 state half-applied. If you cannot complete the write set, say so and apply nothing —
 do not write a partial event.
+
+**Not yours to write:** `~/.gamify/checkins.json` is owned by the session-viewer web app
+(daily mood/check-in). It is *not* part of this skill's write set — never read or mutate it
+here. The five sacred files above remain the only state this skill touches.
 
 ---
 

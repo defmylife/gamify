@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "forged": [],
+  "forgeGuards": {
+    "lastForgeAt": "1970-01-01T00:00:00Z",
+    "lastForgeLevel": 0,
+    "lastForgeQuestId": null,
+    "cooldownDays": 14,
+    "minSessions": 5,
+    "minPatternSessions": 3,
+    "maxDrafted": 1,
+    "declinedSlugs": []
+  },
+  "updatedAt": "1970-01-01T00:00:00Z"
+}

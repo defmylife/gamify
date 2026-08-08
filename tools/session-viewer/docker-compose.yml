@@ -5,7 +5,9 @@ services:
       - "7777:7777"
     volumes:
       - ~/.claude/projects:/data/projects:ro
-      - ~/.gamify:/data/gamify:ro
+      # read-write: the viewer writes ONLY checkins.json (daily mood/check-in).
+      # The four gm-quest-tracker state files are never written here.
+      - ~/.gamify:/data/gamify
       - /etc/localtime:/etc/localtime:ro
     environment:
       - PROJECTS_DIR=/data/projects
