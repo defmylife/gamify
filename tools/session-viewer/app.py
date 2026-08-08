@@ -281,6 +281,18 @@ def today_local_str() -> str:
     return datetime.now().astimezone().strftime("%Y-%m-%d")
 
 
+def esc(v) -> str:
+    """Escape a value for HTML interpolation.
+
+    Used on forged-skill fields, which are LLM-authored *from session transcript
+    content* — and transcripts routinely carry raw HTML/JS from pasted pages, error
+    dumps, and code samples. The rest of this file still interpolates raw; escaping
+    it wholesale is a separate change.
+    """
+    return (str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                  .replace('"', "&quot;").replace("'", "&#39;"))
+
+
 # ── Gamify state ───────────────────────────────────────────────────────────────
 def load_json(name: str, default):
     path = GAMIFY_DIR / name
@@ -298,10 +310,11 @@ def load_state():
         "quests": load_json("quests.json", {}),
         "achievements": load_json("achievements.json", {}),
         "sessions": load_json("sessions.json", {}),
+        "skills": load_json("skills.json", {}),
     }
 
 # checkins.json is VIEWER-OWNED (mood / daily check-in). It is deliberately NOT one
-# of the four gm-quest-tracker "sacred" files, so writing it here does not violate
+# of the five gm-quest-tracker "sacred" files, so writing it here does not violate
 # the state-write contract. It is the only file this app ever writes.
 def load_checkins() -> dict:
     return load_json("checkins.json", {"days": {}})
@@ -856,15 +869,44 @@ def session_detail(project_enc: str, session_id: str):
   <div style="padding:12px 14px;background:rgba(233,218,180,.9);color:#3a2a1a;white-space:pre-wrap;font-size:12px">{str(content)[:300]}</div></details>
 </div>""")
 
+    # The Guildboard never forges anything itself — it hands the adventurer the exact
+    # prompt to say to the Game Master, who reads this transcript and drafts the skill.
+    # Use the *encoded* project dir name, not decode_project_name(): the decode is lossy
+    # (a "-" inside a directory name is indistinguishable from a path separator) and is
+    # only safe for the display label. The encoded name resolves the transcript directly.
+    forge_prompt = (f"Hey Game Master, forge a skill from session {session_id} "
+                    f"in project {project_enc}")
+
     body = f"""
 <div class="wrap">
   <a href="/sessions" style="font-size:12px">← All sessions</a>
   <div style="font-size:11px;color:#8fbf8a;margin:12px 0 4px">{proj_label}</div>
-  <h2 class="pix" style="font-size:18px;color:#f7e6b8">{title}</h2>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+    <h2 class="pix" style="font-size:18px;color:#f7e6b8">{title}</h2>
+    <button class="btn-pix btn-grn pix" onclick="openForge()" style="font-size:9px;padding:9px 14px;color:#f7f0d8">⚒ FORGE A SKILL</button>
+  </div>
   <div style="font-size:10px;color:#6b8a6a;margin:6px 0 22px">{session_id}</div>
   {"".join(turns) if turns else '<div class="empty">No turns found</div>'}
 </div>"""
-    return HTMLResponse(html_page(title, "sessions", state, body))
+
+    forge_modal = f"""
+<div class="overlay" id="forgeModal" onclick="if(event.target===this)closeForge()">
+  <div class="modal parch" style="max-width:480px;width:100%;padding:26px 28px">
+    <h2 class="pix" style="font-size:15px;color:#3a2a1a;margin-bottom:12px">⚒ FORGE A SKILL FROM THIS SESSION</h2>
+    <p style="font-size:12px;color:#6b5330;line-height:1.8;margin-bottom:12px">The Guildboard only reads. Ask the <strong>Game Master</strong> in Claude Code — it will study this transcript, find the pattern worth keeping, and draft a skill for you.</p>
+    <code id="forgePrompt" style="display:block;background:#2a1d10;color:#9be89b;padding:10px 12px;font-size:11.5px;line-height:1.7;word-break:break-all;margin-bottom:12px">{esc(forge_prompt)}</code>
+    <p style="font-size:11px;color:#8a6a3a;line-height:1.8;margin-bottom:16px">Nothing is installed without your yes — the draft rests in <code>~/.gamify/forge/</code> until you equip it.</p>
+    <button class="btn-pix btn-grn pix" onclick="copyForge(this)" style="font-size:10px;padding:10px 16px;color:#f7f0d8">COPY PROMPT</button>
+    <button class="btn-pix pix" onclick="closeForge()" style="font-size:10px;padding:10px 16px;background:#b79a68;color:#3a2a1a;margin-left:8px">CLOSE</button>
+  </div>
+</div>
+<script>
+function openForge(){{document.getElementById('forgeModal').classList.add('open');}}
+function closeForge(){{document.getElementById('forgeModal').classList.remove('open');}}
+function copyForge(b){{var t=document.getElementById('forgePrompt').textContent;var d=function(){{var o=b.textContent;b.textContent='COPIED!';setTimeout(function(){{b.textContent=o;}},1500);}};if(navigator.clipboard&&navigator.clipboard.writeText){{navigator.clipboard.writeText(t).then(d).catch(function(){{window.prompt('Copy this prompt:',t);}});}}else{{window.prompt('Copy this prompt:',t);}}}}
+document.addEventListener('keydown',function(e){{if(e.key==='Escape')closeForge();}});
+</script>"""
+    return HTMLResponse(html_page(title, "sessions", state, body, forge_modal))
 
 
 @app.get("/profile", response_class=HTMLResponse)
@@ -998,6 +1040,65 @@ def profile_page():
         for c in log
     ) or '<div style="font-size:11px;color:#8a6a3a">The chronicle is empty. Your first logged session begins it.</div>'
 
+    # Forged skills (gm-skill-forge). Read-only: equipping happens in the terminal via
+    # the Game Master, so the button hands over a prompt rather than mutating anything.
+    forged = (state.get("skills", {}) or {}).get("forged", []) or []
+    shown = [s for s in forged if s.get("status") in ("drafted", "equipped")]
+    sk_cards = []
+    for s in shown:
+        equipped = s.get("status") == "equipped"
+        tri = s.get("triage", {}) or {}
+        ev = s.get("evidence", {}) or {}
+        nm = esc(s.get("name", ""))
+        pill = ('<span class="pill" style="background:#5f9c4a;color:#f7f0d8">EQUIPPED</span>' if equipped
+                else '<span class="pill">IN THE ARMORY</span>')
+        act = ('<span style="font-size:9px;color:#6b5330">in use everywhere</span>' if equipped else
+               f'<button class="btn-pix btn-grn pix" onclick="openEquip(\'{nm}\')"'
+               f' style="font-size:9px;padding:8px 12px;color:#f7f0d8">EQUIP →</button>')
+        sk_cards.append(f"""
+<div class="inset" style="padding:14px 16px">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+    <span class="pix" style="font-size:11px;color:#3a2a1a;line-height:1.5">{esc(s.get('emoji','⚒'))} {nm}</span>
+    {pill}
+  </div>
+  <div style="font-size:10px;color:#6b5330;margin:8px 0 10px;line-height:1.8">{esc(s.get('pattern',''))}</div>
+  <div class="dash2" style="margin:0 0 10px"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-size:9px;color:#8a6a3a">TRIAGE {esc(tri.get('total','–'))} / 15 · {esc(ev.get('sessionCount',0))} sessions · forged {esc(s.get('forgedOn',''))}</span>
+    {act}
+  </div>
+</div>""")
+    skills_html = "".join(sk_cards) or ('<div style="font-size:11px;color:#8a6a3a">'
+        'No skills forged yet. Keep working — the Game Master is watching for a pattern worth keeping.</div>')
+
+    skills_panel = f"""
+<div class="parch" style="padding:22px 24px;margin-top:22px">
+  <div style="display:flex;justify-content:space-between;align-items:baseline">
+    <span class="sect">FORGED SKILLS</span>
+    <span style="font-size:10px;color:#8a6a3a">{sum(1 for s in shown if s.get('status') == 'equipped')} equipped · {len(shown)} total</span>
+  </div>
+  <div class="dash" style="margin:4px 0 18px"></div>
+  <div style="display:flex;flex-direction:column;gap:14px">{skills_html}</div>
+</div>"""
+
+    equip_modal = """
+<div class="overlay" id="equipModal" onclick="if(event.target===this)closeEquip()">
+  <div class="modal parch" style="max-width:460px;width:100%;padding:26px 28px">
+    <h2 class="pix" style="font-size:15px;color:#3a2a1a;margin-bottom:12px">⚒ EQUIP THIS SKILL</h2>
+    <p style="font-size:12px;color:#6b5330;line-height:1.8;margin-bottom:12px">The Guildboard can't install skills — only the <strong>Game Master</strong> can. Open Claude Code and ask:</p>
+    <code id="equipPrompt" style="display:block;background:#2a1d10;color:#9be89b;padding:10px 12px;font-size:12px;line-height:1.7;word-break:break-all;margin-bottom:12px"></code>
+    <p style="font-size:11px;color:#8a6a3a;line-height:1.8;margin-bottom:16px">Equipping copies it into <code>~/.claude/skills/</code> so Claude loads it in every project — and pays out +40 XP.</p>
+    <button class="btn-pix btn-grn pix" onclick="copyEquip(this)" style="font-size:10px;padding:10px 16px;color:#f7f0d8">COPY PROMPT</button>
+    <button class="btn-pix pix" onclick="closeEquip()" style="font-size:10px;padding:10px 16px;background:#b79a68;color:#3a2a1a;margin-left:8px">NOT NOW</button>
+  </div>
+</div>
+<script>
+function openEquip(n){document.getElementById('equipPrompt').textContent='Hey Game Master, equip my forged skill "'+n+'"';document.getElementById('equipModal').classList.add('open');}
+function closeEquip(){document.getElementById('equipModal').classList.remove('open');}
+function copyEquip(b){var t=document.getElementById('equipPrompt').textContent;var d=function(){var o=b.textContent;b.textContent='COPIED!';setTimeout(function(){b.textContent=o;},1500);};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(d).catch(function(){window.prompt('Copy this prompt:',t);});}else{window.prompt('Copy this prompt:',t);}}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeEquip();});
+</script>"""
+
     body = f"""
 <div class="wrap">
   {banner}
@@ -1009,6 +1110,7 @@ def profile_page():
     </div>
     {ach_panel}
   </div>
+  {skills_panel}
   <div class="parch" style="padding:22px 24px;margin-top:22px">
     <div class="sect">CHRONICLE</div>
     <div class="dash" style="margin:4px 0 16px"></div>
@@ -1016,7 +1118,7 @@ def profile_page():
   </div>
 </div>
 <style>@media (max-width:860px){{.wrap > div[style*="grid-template-columns:1.15fr"]{{grid-template-columns:1fr!important}}}}</style>"""
-    return HTMLResponse(html_page("Profile", "profile", state, body, celebration_html(state)))
+    return HTMLResponse(html_page("Profile", "profile", state, body, celebration_html(state) + equip_modal))
 
 
 @app.get("/guildboard", response_class=HTMLResponse)
