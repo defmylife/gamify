@@ -407,7 +407,10 @@ the affected files in this fixed order:
 1. **profile.json** — `level`, `title`, `xp`, `xpForNextLevel`, `streak`, `craftBadges`,
    and append `xpLedger[]` entries (`{ "source", "xp", "date" }`)
 2. **quests.json** — `sideQuests[]` status transitions (todo → active → completed, with
-   `completedOn`), new entries, `mainQuests[]` unlocks, `suggested[]` status changes
+   `completedOn`), new entries, `mainQuests[]` unlocks, `suggested[]` status changes.
+   Each active/todo side quest carries a `progress` object `{ "done": <int>, "total": <int> }`
+   — `total` defaults to the number of `objectives`; bump `done` as objectives are met so the
+   Guildboard/Profile progress bars stay accurate. On completion set `done == total`.
 3. **achievements.json** — append to `unlocked[]`; update `evalGuards`
    (`lastEvalDate`, `checkedThisSession`)
 4. **sessions.json** — increment `sessionCounter`, append to `log[]`, replace `gmNote`;
@@ -420,6 +423,10 @@ both write together under the same fixed order and atomic rule.
 **Atomic rule:** A single event updates all the files it touches, together. Never leave
 state half-applied. If you cannot complete the write set, say so and apply nothing —
 do not write a partial event.
+
+**Not yours to write:** `~/.gamify/checkins.json` is owned by the session-viewer web app
+(daily mood/check-in). It is *not* part of this skill's write set — never read or mutate it
+here. The four sacred files above remain the only state this skill touches.
 
 ---
 
